@@ -1,2 +1,0 @@
-pytelegrambotapi
-vk_api

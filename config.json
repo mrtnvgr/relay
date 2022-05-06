@@ -1,7 +1,6 @@
 {
 	"vk": {
-		"login": "+78005553535",
-		"password": "password"
+		"token": "j123123jh234hjbhsdoaslcx"
 	},
 	"telegram": {
 		"token": "123456789:QQQQ_abcdefghijklmnop",
@@ -9,8 +8,11 @@
 	},
 	"whitelist": ["#metal"],
 	"blacklist": ["#gabber"],
-	"articles": true,
-	"offtopic": true,
+	"postType": {
+		"albums": true,
+		"articles": true,
+		"offtopic": true
+	},
 	"maxHistory": 100,
 	"interval": 3600
 }
