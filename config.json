@@ -1,0 +1,16 @@
+{
+	"vk": {
+		"login": "+78005553535",
+		"password": "password"
+	},
+	"telegram": {
+		"token": "123456789:QQQQ_abcdefghijklmnop",
+		"user_id": 3128932
+	},
+	"whitelist": ["#metal"],
+	"blacklist": ["#gabber"],
+	"articles": true,
+	"offtopic": true,
+	"maxHistory": 100,
+	"interval": 3600
+}
