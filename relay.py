@@ -2,7 +2,7 @@
 import requests, argparse, threading, time, json, os
 from subprocess import Popen
 
-version = "0.0.3"
+version = "0.0.4"
 title = f"Relay v{version}"
 
 def updateScr(postCount):
@@ -14,6 +14,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--config", default="config.json")
 parser.add_argument("-nc", "--no-cache", action="store_true")
 args = parser.parse_args()
+
+REPLYMARKUP = '{"inline_keyboard": [[{"text": "!LIKESIGN!", "callback_data": "\/like"}]]}'
 
 if args.config[:4]=="url:":
     config = json.loads(requests.get(args.config[4:]).text)
@@ -35,13 +37,17 @@ def updater_maker(filename, fileurl, executable):
     f.write(string)
     f.close()
     Popen("python updater.py", shell=True)
-    telegramApi("sendMessage", {"chat_id": config['telegram']['user_id'], "text": "Updated!"})
+    apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "Updated!"})
 
 
-def telegramApi(method, payload): return requests.get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
+def apiRequest(service, method, payload):
+    if service=="telegram":
+        return requests.get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
+    elif service=="vk":
+        return requests.get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
 
 def get_updates(config):
-    result = telegramApi("getUpdates", {})
+    result = apiRequest("telegram", "getUpdates", {})
     if result['ok']==True:
         return result["result"]
     else:
@@ -54,23 +60,40 @@ def replier(config):
         for message in messages:
             if update_id<message['update_id']:
                 update_id=message['update_id']
-                if "text" in message["message"].keys():
-                    text = message["message"]["text"]
+                if "message" in message.keys():
+                    if "text" in message["message"].keys():
+                        text = message["message"]["text"]
+                    else:
+                        text = "/update"
+                    payload = {"chat_id": config['telegram']['user_id'], "text": "Invalid command!"}
+                    if text=="/help":
+                        payload["text"] = "/online - check if bot is online\n/update - config files update"
+                    elif text=="/online":
+                        payload["text"] = "yes"
+                    elif text=="/update":
+                        if "document" in message["message"]:
+                            filepath = apiRequest("telegram", "getFile", {"file_id": message["message"]["document"]["file_id"]})["result"]["file_path"]
+                            filename = message["message"]["document"]["file_name"]
+                            updater_maker(filename, "https://api.telegram.org/file/bot{config['telegram']['token']}/{filepath}", False)
+                            if args.config[:4]!="url:" and filename[-4:]=="json": config = json.load(open(filename))
+                    if text!="/update": apiRequest("telegram", "sendMessage", payload)
                 else:
-                    text = "/update"
-                payload = {"chat_id": config['telegram']['user_id'], "text": "Invalid command!"}
-                if text=="/help":
-                    payload["text"] = "/online - check if bot is online\n/update - config files update"
-                elif text=="/online":
-                    payload["text"] = "yes"
-                elif text=="/update":
-                    if "document" in message["message"]:
-                        filepath = telegramApi("getFile", {"file_id": message["message"]["document"]["file_id"]})["result"]["file_path"]
-                        filename = message["message"]["document"]["file_name"]
-                        updater_maker(filename, "https://api.telegram.org/file/bot{config['telegram']['token']}/{filepath}", False)
-                        if args.config[:4]!="url:" and filename[-4:]=="json": config = json.load(open(filename))
-                if text!="/update": telegramApi("sendMessage", payload)
-
+                    for entity in message["callback_query"]["message"]["caption_entities"]:
+                        if entity["type"]=="text_link" and "wall" in entity["url"]:
+                            postUrl = entity["url"].split("_")
+                            message_id = message["callback_query"]["message"]["message_id"]
+                            for button in message["callback_query"]["message"]["reply_markup"]["inline_keyboard"][0]:
+                                if button["callback_data"]=="/like":
+                                    if button["text"]=="🖤":
+                                        likeButtonText = "❤️"
+                                        likeButtonMethod = "likes.delete"
+                                    else:
+                                        likeButtonText = "🖤"
+                                        likeButtonMethod = "likes.add"
+                                    likes = apiRequest("vk", likeButtonMethod, {"type": "post", "owner_id": "-"+postUrl[0].split("-")[1], "item_id": postUrl[1]})
+                                    apiRequest("telegram", "editMessageReplyMarkup", {"chat_id": config["telegram"]["user_id"], "message_id": message_id, "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText)})
+                            apiRequest("telegram", "answerCallbackQuery", {"callback_query_id": message["callback_query"]["id"], "text": f"Total Likes: {likes['response']['likes']}", "show_alert": True})
+                            break
 replierThread = threading.Thread(target=replier, args=(config,))
 replierThread.daemon = True
 replierThread.start()
@@ -79,19 +102,17 @@ postCount = 0
 while 1:
     # update check
     remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
-    if "name" not in remote_version.keys(): remote_version = version
-    if version!=remote_version:
-        updater_maker("relay.py", "https://raw.githubusercontent.com/mrtnvgr/relay/main/relay.py", True)
-        exit(0)
+    if "name" in remote_version.keys():
+        if version!=remote_version:
+            updater_maker("relay.py", "https://raw.githubusercontent.com/mrtnvgr/relay/main/relay.py", True)
+            exit(0)
     updateScr(postCount)
     newPosts = []
-    payload = {"access_token": config["vk"]["token"],
-               "domain": "doujinmusic",
+    payload = {"domain": "doujinmusic",
                "offset": "1",
                "count": config["maxHistory"],
-               "sort": "desc",
-               "v": "5.131"}
-    posts = requests.get("https://api.vk.com/method/wall.get", params=payload).json()
+               "sort": "desc"}
+    posts = apiRequest("vk", "wall.get", payload)
     if 'error' in posts.keys():
         print("VK api error!")
         print(posts)
@@ -115,6 +136,10 @@ while 1:
             if len(history["ids"])>config["maxHistory"]: history["ids"] = history["ids"][-config["maxHistory"]:]
             if not args.no_cache: json.dump(history, open("cache.json", "w"))
             file = [False, False]
+            if post["likes"]["user_likes"]==0:
+                likeButtonText = "❤️"
+            else:
+                likeButtonText = "🖤"
             if "attachments" in post:
                 for attachment in post["attachments"]:
                     if attachment["type"]=="doc":
@@ -134,15 +159,17 @@ while 1:
                     payload = {"chat_id": config['telegram']['user_id'],
                                "photo": postPhoto,
                                "caption": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>\n\n<a href='{file[1]['url']}'>{file[1]['title']}</a>",
+                               "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
                                "parse_mode": "HTML"}
-                    telegramApi("sendPhoto", payload)
+                    apiRequest("telegram", "sendPhoto", payload)
                     postCount += 1
-                else:
-                    if config["postType"]["offtopic"] and "@doujinmusic" not in post["text"]:
-                        payload = {"chat_id": config['telegram']['user_id'],
-                                   "text": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>",
-                                   "parse_mode": "HTML"}
-                        telegramApi("sendMessage", payload)
-                        postCount += 1
+            else:
+                if config["postType"]["offtopic"] and "@doujinmusic" not in post["text"]:
+                    payload = {"chat_id": config['telegram']['user_id'],
+                                "text": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>",
+                                "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
+                                "parse_mode": "HTML"}
+                    apiRequest("telegram", "sendMessage", payload)
+                    postCount += 1
             updateScr(postCount)
     time.sleep(config["interval"])
