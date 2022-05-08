@@ -2,7 +2,7 @@
 import requests, argparse, threading, time, json, os
 from subprocess import Popen
 
-version = "0.0.4"
+version = "0.0.5"
 title = f"Relay v{version}"
 
 def updateScr(postCount):
@@ -103,7 +103,7 @@ while 1:
     # update check
     remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
     if "name" in remote_version.keys():
-        if version!=remote_version:
+        if version!=remote_version["name"]:
             updater_maker("relay.py", "https://raw.githubusercontent.com/mrtnvgr/relay/main/relay.py", True)
             exit(0)
     updateScr(postCount)
@@ -143,8 +143,8 @@ while 1:
             if "attachments" in post:
                 for attachment in post["attachments"]:
                     if attachment["type"]=="doc":
-                        filetype = attachment["doc"]["title"][:6]
-                        if filetype=="[FLAC]" or "[WAV]" in filetype:
+                        filetype = attachment["doc"]["title"]
+                        if "[FLAC]" in filetype or "[WAV]" in filetype:
                             file = [True, attachment["doc"]]
                         else:
                             if file[0]==False:
@@ -155,16 +155,19 @@ while 1:
                         file = [True, attachment["link"]]
                         postPhoto = attachment["link"]["photo"]["sizes"][-1]["url"]
                         break
+                    elif attachment["type"]=="link":
+                        if attachment["link"]["description"]=="Плейлист":
+                            postPlaylist = attachment["link"]["url"]
                 if file[1]!=False:
                     payload = {"chat_id": config['telegram']['user_id'],
                                "photo": postPhoto,
-                               "caption": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>\n\n<a href='{file[1]['url']}'>{file[1]['title']}</a>",
+                               "caption": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>\n<a href='{postPlaylist}'>Playlist</a>\n\n<a href='{file[1]['url']}'>{file[1]['title']}</a>",
                                "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
                                "parse_mode": "HTML"}
                     apiRequest("telegram", "sendPhoto", payload)
                     postCount += 1
             else:
-                if config["postType"]["offtopic"] and "@doujinmusic" not in post["text"]:
+                if (config["postType"]["offtopic"] and "@doujinmusic" not in post["text"]):
                     payload = {"chat_id": config['telegram']['user_id'],
                                 "text": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>",
                                 "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
