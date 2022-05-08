@@ -2,7 +2,7 @@
 import requests, argparse, threading, time, json, os
 from subprocess import Popen
 
-version = "0.0.5"
+version = "0.0.6"
 title = f"Relay v{version}"
 
 def updateScr(postCount):
@@ -16,6 +16,7 @@ parser.add_argument("-nc", "--no-cache", action="store_true")
 args = parser.parse_args()
 
 REPLYMARKUP = '{"inline_keyboard": [[{"text": "!LIKESIGN!", "callback_data": "\/like"}]]}'
+startTime = time.monotonic()
 
 if args.config[:4]=="url:":
     config = json.loads(requests.get(args.config[4:]).text)
@@ -42,9 +43,9 @@ def updater_maker(filename, fileurl, executable):
 
 def apiRequest(service, method, payload):
     if service=="telegram":
-        return requests.get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
+        return requests.Session().get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
     elif service=="vk":
-        return requests.get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
+        return requests.Session().get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
 
 def get_updates(config):
     result = apiRequest("telegram", "getUpdates", {})
@@ -67,9 +68,11 @@ def replier(config):
                         text = "/update"
                     payload = {"chat_id": config['telegram']['user_id'], "text": "Invalid command!"}
                     if text=="/help":
-                        payload["text"] = "/online - check if bot is online\n/update - config files update"
+                        payload["text"] = "/online - check if bot is online\n/update - config files update\n/uptime - get script uptime"
                     elif text=="/online":
                         payload["text"] = "yes"
+                    elif text=="/uptime":
+                        payload["text"] = time.strftime("%M minutes %S seconds", time.localtime(time.monotonic()-startTime))
                     elif text=="/update":
                         if "document" in message["message"]:
                             filepath = apiRequest("telegram", "getFile", {"file_id": message["message"]["document"]["file_id"]})["result"]["file_path"]
@@ -94,12 +97,9 @@ def replier(config):
                                     apiRequest("telegram", "editMessageReplyMarkup", {"chat_id": config["telegram"]["user_id"], "message_id": message_id, "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText)})
                             apiRequest("telegram", "answerCallbackQuery", {"callback_query_id": message["callback_query"]["id"], "text": f"Total Likes: {likes['response']['likes']}", "show_alert": True})
                             break
-replierThread = threading.Thread(target=replier, args=(config,))
-replierThread.daemon = True
-replierThread.start()
 
-postCount = 0
-while 1:
+def main():
+    postCount = 0
     # update check
     remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
     if "name" in remote_version.keys():
@@ -176,3 +176,15 @@ while 1:
                     postCount += 1
             updateScr(postCount)
     time.sleep(config["interval"])
+
+replierThread = threading.Thread(target=replier, args=(config,))
+replierThread.daemon = True
+
+if __name__=="__main__":
+    while True:
+        apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "restarting..."})
+        try:
+            replierThread.start()
+            main()
+        except Exception as e:
+            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": e})
