@@ -2,7 +2,7 @@
 import requests, argparse, threading, time, json, os
 from subprocess import Popen
 
-version = "0.0.6"
+version = "0.0.7"
 title = f"Relay v{version}"
 
 def updateScr(postCount):
@@ -32,7 +32,7 @@ if not args.no_cache:
 #https://oauth.vk.com/authorize?client_id=[APP ID]&display=page&scope=wall,groups,offline&response_type=token&v=5.131&state=123456
 
 def updater_maker(filename, fileurl, executable):
-    string = f"from subprocess import Popen\nimport requests\nf = open('{filename}', 'w')\nf.write(requests.get('{fileurl}').text)\nf.close()\n"
+    string = f"from subprocess import Popen\nimport requests\nf = open('{filename}', 'w', encoding='utf-8')\nf.write(requests.get('{fileurl}').text)\nf.close()\n"
     if executable: string = string + f"Popen('python {filename}', shell=True)\nexit()"
     f = open("updater.py", "w")
     f.write(string)
@@ -49,7 +49,7 @@ def apiRequest(service, method, payload):
 
 def get_updates(config):
     result = apiRequest("telegram", "getUpdates", {})
-    if result['ok']==True:
+    if result['ok']==True and result["result"]!=[]:
         return result["result"]
     else:
         return [{"update_id": 0}]
