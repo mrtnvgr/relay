@@ -3,13 +3,16 @@ import requests, argparse, threading, time, json, os
 from subprocess import Popen
 from random import randint
 
-version = "0.0.8"
+version = "0.0.9"
 title = f"Relay v{version}"
 
-def updateScr(postCount):
+def updateScr():
+    global postCount
+    global inlineRequestsCount
     os.system('cls' if os.name == 'nt' else 'clear')
     print(title)
     print(f"Post counter: {postCount}")
+    print(f"Inline requests: {inlineRequestsCount}")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--config", default="config.json")
@@ -96,19 +99,21 @@ def replier(config):
                                         likeButtonMethod = "likes.add"
                                     likes = apiRequest("vk", likeButtonMethod, {"type": "post", "owner_id": "-"+postUrl[0].split("-")[1], "item_id": postUrl[1]})
                                     apiRequest("telegram", "editMessageReplyMarkup", {"chat_id": config["telegram"]["user_id"], "message_id": message_id, "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText)})
-                            apiRequest("telegram", "answerCallbackQuery", {"callback_query_id": message["callback_query"]["id"], "text": f"Total Likes: {likes['response']['likes']}", "show_alert": True})
-                            break
+                                    apiRequest("telegram", "answerCallbackQuery", {"callback_query_id": message["callback_query"]["id"], "text": f"Total Likes: {likes['response']['likes']}", "show_alert": True})
+                                    break
                 elif "inline_query" in message.keys():
                     payload = {"domain": "doujinmusic",
                                "offset": "1",
                                "query": message["inline_query"]["query"],
                                "owners_only": "1"}
-                    postCheck(apiRequest("vk", "wall.search", payload)["response"]["items"], inline=True, inline_id=message["inline_query"]["id"])
-                    # TODO: only owner can like the post (add check)
-                    # TODO: ограниченные запросы (от одного человека макс 5 в час [если это не owner])
+                    user_id = message["inline_query"]["from"]["id"]
+                    if (config["inlineOwnerOnly"] and message[user_id]==config["telegram"]["user_id"]) or (config["inlineOwnerOnly"]!=True):
+                        search_posts = apiRequest("vk", "wall.search", payload)
+                        postCheck(search_posts["response"]["items"], inline=True, inline_id=message["inline_query"]["id"])
 
 def postCheck(newPosts, inline=False, inline_id=0):
     global postCount
+    global inlineRequestsCount
     results = []
     if len(newPosts)>0:
         for post in newPosts:
@@ -118,7 +123,7 @@ def postCheck(newPosts, inline=False, inline_id=0):
                 if len(history["ids"])>config["maxHistory"]: history["ids"] = history["ids"][-config["maxHistory"]:]
                 if not args.no_cache: json.dump(history, open("cache.json", "w"))
             file = [False, False]
-            postPlaylist = False
+            postPlaylist = ""
             if post["likes"]["user_likes"]==0:
                 likeButtonText = "❤️"
             else:
@@ -147,7 +152,7 @@ def postCheck(newPosts, inline=False, inline_id=0):
                                 "caption": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>\n<a href='{postPlaylist}'>Playlist</a>\n\n<a href='{file[1]['url']}'>{file[1]['title']}</a>",
                                 "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
                                 "parse_mode": "HTML"}
-                    if inline==False:
+                    if not inline:
                         apiRequest("telegram", "sendPhoto", payload)
                         postCount += 1
                     else:
@@ -167,17 +172,22 @@ def postCheck(newPosts, inline=False, inline_id=0):
                                 "parse_mode": "HTML"}
                     apiRequest("telegram", "sendMessage", payload)
                     postCount += 1
-        if inline: apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": f'[{",".join(results)}]'})
+        if inline:
+            inlineRequestsCount += 1
+            apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": f'[{",".join(results)}]'})
+            updateScr()
 
 def main():
     global postCount
+    global inlineRequestsCount
     postCount = 0
+    inlineRequestsCount = 0
     remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
     if "name" in remote_version.keys():
         if version!=remote_version["name"]:
             updater_maker("relay.py", "https://raw.githubusercontent.com/mrtnvgr/relay/main/relay.py", True)
             exit(0)
-    updateScr(postCount)
+    updateScr()
     newPosts = []
     payload = {"domain": "doujinmusic",
                "offset": "1",
@@ -201,7 +211,7 @@ def main():
             if (whitelist and not blacklist and config["postType"]["albums"]) or ("#статьи@doujinmusic" in i["text"] and config["postType"]["articles"]) or "@doujinmusic" not in i["text"]:
                 newPosts.append(i)
     postCheck(newPosts)
-    updateScr(postCount)
+    updateScr()
     time.sleep(config["interval"])
 
 
@@ -212,7 +222,7 @@ if __name__=="__main__":
     while True:
         apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "restarting..."})
         try:
-            replierThread.start()
+            if not replierThread.is_alive(): replierThread.start()
             main()
         except Exception as e:
             apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": f"Exception: {e}"})

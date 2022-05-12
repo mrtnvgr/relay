@@ -13,6 +13,7 @@
 		"articles": true,
 		"offtopic": true
 	},
+	"inlineOwnerOnly": true,
 	"maxHistory": 100,
 	"interval": 3600
 }
