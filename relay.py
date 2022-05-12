@@ -1,8 +1,9 @@
 #!/bin/python
 import requests, argparse, threading, time, json, os
 from subprocess import Popen
+from random import randint
 
-version = "0.0.7"
+version = "0.0.8"
 title = f"Relay v{version}"
 
 def updateScr(postCount):
@@ -80,7 +81,7 @@ def replier(config):
                             updater_maker(filename, "https://api.telegram.org/file/bot{config['telegram']['token']}/{filepath}", False)
                             if args.config[:4]!="url:" and filename[-4:]=="json": config = json.load(open(filename))
                     if text!="/update": apiRequest("telegram", "sendMessage", payload)
-                else:
+                elif "callback_query" in message.keys():
                     for entity in message["callback_query"]["message"]["caption_entities"]:
                         if entity["type"]=="text_link" and "wall" in entity["url"]:
                             postUrl = entity["url"].split("_")
@@ -97,10 +98,80 @@ def replier(config):
                                     apiRequest("telegram", "editMessageReplyMarkup", {"chat_id": config["telegram"]["user_id"], "message_id": message_id, "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText)})
                             apiRequest("telegram", "answerCallbackQuery", {"callback_query_id": message["callback_query"]["id"], "text": f"Total Likes: {likes['response']['likes']}", "show_alert": True})
                             break
+                elif "inline_query" in message.keys():
+                    payload = {"domain": "doujinmusic",
+                               "offset": "1",
+                               "query": message["inline_query"]["query"],
+                               "owners_only": "1"}
+                    postCheck(apiRequest("vk", "wall.search", payload)["response"]["items"], inline=True, inline_id=message["inline_query"]["id"])
+                    # TODO: only owner can like the post (add check)
+                    # TODO: ограниченные запросы (от одного человека макс 5 в час [если это не owner])
+
+def postCheck(newPosts, inline=False, inline_id=0):
+    global postCount
+    results = []
+    if len(newPosts)>0:
+        for post in newPosts:
+            if inline==False:
+                history["ids"].append(post['id'])
+                if history["ids"][0]==False: history["ids"].pop(0)
+                if len(history["ids"])>config["maxHistory"]: history["ids"] = history["ids"][-config["maxHistory"]:]
+                if not args.no_cache: json.dump(history, open("cache.json", "w"))
+            file = [False, False]
+            postPlaylist = False
+            if post["likes"]["user_likes"]==0:
+                likeButtonText = "❤️"
+            else:
+                likeButtonText = "🖤"
+            if "attachments" in post:
+                for attachment in post["attachments"]:
+                    if attachment["type"]=="doc":
+                        filetype = attachment["doc"]["title"]
+                        if "[FLAC]" in filetype or "[WAV]" in filetype:
+                            file = [True, attachment["doc"]]
+                        else:
+                            if file[0]==False:
+                                file[1] = attachment["doc"]
+                    elif attachment["type"]=="photo":
+                        postPhoto = attachment["photo"]["sizes"][-1]["url"]
+                    elif attachment["type"]=="link" and "#статьи@doujinmusic" in post['text']:
+                        file = [True, attachment["link"]]
+                        postPhoto = attachment["link"]["photo"]["sizes"][-1]["url"]
+                        break
+                    elif attachment["type"]=="link":
+                        if attachment["link"]["description"]=="Плейлист":
+                            postPlaylist = attachment["link"]["url"]
+                if file[1]!=False:
+                    payload = {"chat_id": config['telegram']['user_id'],
+                                "photo": postPhoto,
+                                "caption": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>\n<a href='{postPlaylist}'>Playlist</a>\n\n<a href='{file[1]['url']}'>{file[1]['title']}</a>",
+                                "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
+                                "parse_mode": "HTML"}
+                    if inline==False:
+                        apiRequest("telegram", "sendPhoto", payload)
+                        postCount += 1
+                    else:
+                        payload.pop("chat_id")
+                        payload.pop("reply_markup")
+                        payload["id"] = str(post["id"])
+                        payload["type"] = "photo"
+                        payload["title"] = post["text"]
+                        payload["photo_url"] = payload.pop("photo")
+                        payload["thumb_url"] = payload["photo_url"]
+                        results.append(json.dumps(payload))
+            else:
+                if (config["postType"]["offtopic"] and "@doujinmusic" not in post["text"]) and not inline:
+                    payload = {"chat_id": config['telegram']['user_id'],
+                                "text": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>",
+                                "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
+                                "parse_mode": "HTML"}
+                    apiRequest("telegram", "sendMessage", payload)
+                    postCount += 1
+        if inline: apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": f'[{",".join(results)}]'})
 
 def main():
+    global postCount
     postCount = 0
-    # update check
     remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
     if "name" in remote_version.keys():
         if version!=remote_version["name"]:
@@ -129,53 +200,10 @@ def main():
                 if tag in i["text"]: blacklist = True
             if (whitelist and not blacklist and config["postType"]["albums"]) or ("#статьи@doujinmusic" in i["text"] and config["postType"]["articles"]) or "@doujinmusic" not in i["text"]:
                 newPosts.append(i)
-    if len(newPosts)>0:
-        for post in newPosts:
-            history["ids"].append(post['id'])
-            if history["ids"][0]==False: history["ids"].pop(0)
-            if len(history["ids"])>config["maxHistory"]: history["ids"] = history["ids"][-config["maxHistory"]:]
-            if not args.no_cache: json.dump(history, open("cache.json", "w"))
-            file = [False, False]
-            if post["likes"]["user_likes"]==0:
-                likeButtonText = "❤️"
-            else:
-                likeButtonText = "🖤"
-            if "attachments" in post:
-                for attachment in post["attachments"]:
-                    if attachment["type"]=="doc":
-                        filetype = attachment["doc"]["title"]
-                        if "[FLAC]" in filetype or "[WAV]" in filetype:
-                            file = [True, attachment["doc"]]
-                        else:
-                            if file[0]==False:
-                                file[1] = attachment["doc"]
-                    elif attachment["type"]=="photo":
-                        postPhoto = attachment["photo"]["sizes"][-1]["url"]
-                    elif attachment["type"]=="link" and "#статьи@doujinmusic" in post['text']:
-                        file = [True, attachment["link"]]
-                        postPhoto = attachment["link"]["photo"]["sizes"][-1]["url"]
-                        break
-                    elif attachment["type"]=="link":
-                        if attachment["link"]["description"]=="Плейлист":
-                            postPlaylist = attachment["link"]["url"]
-                if file[1]!=False:
-                    payload = {"chat_id": config['telegram']['user_id'],
-                               "photo": postPhoto,
-                               "caption": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>\n<a href='{postPlaylist}'>Playlist</a>\n\n<a href='{file[1]['url']}'>{file[1]['title']}</a>",
-                               "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
-                               "parse_mode": "HTML"}
-                    apiRequest("telegram", "sendPhoto", payload)
-                    postCount += 1
-            else:
-                if (config["postType"]["offtopic"] and "@doujinmusic" not in post["text"]):
-                    payload = {"chat_id": config['telegram']['user_id'],
-                                "text": f"{post['text']} <a href='vk.com/wall{post['from_id']}_{post['id']}'>(link)</a>",
-                                "reply_markup": REPLYMARKUP.replace("!LIKESIGN!", likeButtonText),
-                                "parse_mode": "HTML"}
-                    apiRequest("telegram", "sendMessage", payload)
-                    postCount += 1
-            updateScr(postCount)
+    postCheck(newPosts)
+    updateScr(postCount)
     time.sleep(config["interval"])
+
 
 replierThread = threading.Thread(target=replier, args=(config,))
 replierThread.daemon = True
@@ -187,4 +215,4 @@ if __name__=="__main__":
             replierThread.start()
             main()
         except Exception as e:
-            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": e})
+            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": f"Exception: {e}"})
