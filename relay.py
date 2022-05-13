@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os
 from subprocess import Popen
 from random import randint
 
-version = "0.0.9"
+version = "0.1.0"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -102,14 +102,15 @@ def replier(config):
                                     apiRequest("telegram", "answerCallbackQuery", {"callback_query_id": message["callback_query"]["id"], "text": f"Total Likes: {likes['response']['likes']}", "show_alert": True})
                                     break
                 elif "inline_query" in message.keys():
-                    payload = {"domain": "doujinmusic",
-                               "offset": "1",
-                               "query": message["inline_query"]["query"],
-                               "owners_only": "1"}
-                    user_id = message["inline_query"]["from"]["id"]
-                    if (config["inlineOwnerOnly"] and message[user_id]==config["telegram"]["user_id"]) or (config["inlineOwnerOnly"]!=True):
-                        search_posts = apiRequest("vk", "wall.search", payload)
-                        postCheck(search_posts["response"]["items"], inline=True, inline_id=message["inline_query"]["id"])
+                    if message["inline_query"]["query"]!="":
+                        payload = {"domain": "doujinmusic",
+                                   "offset": "1",
+                                   "query": message["inline_query"]["query"],
+                                   "owners_only": "1"}
+                        user_id = message["inline_query"]["from"]["id"]
+                        if (config["inlineOwnerOnly"] and user_id==config["telegram"]["user_id"]) or (config["inlineOwnerOnly"]!=True):
+                            search_posts = apiRequest("vk", "wall.search", payload)
+                            postCheck(search_posts["response"]["items"], inline=True, inline_id=message["inline_query"]["id"])
 
 def postCheck(newPosts, inline=False, inline_id=0):
     global postCount
@@ -176,6 +177,9 @@ def postCheck(newPosts, inline=False, inline_id=0):
             inlineRequestsCount += 1
             apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": f'[{",".join(results)}]'})
             updateScr()
+    else:
+        if inline:
+            apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": '[{"type": "article", "id": "0", "title": "Not found", "message_text": "(－‸ლ)"}]'})
 
 def main():
     global postCount
