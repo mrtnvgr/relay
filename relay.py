@@ -1,9 +1,9 @@
 #!/bin/python
-import requests, argparse, threading, time, json, os
+import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.0"
+version = "0.1.1"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -26,6 +26,8 @@ if args.config[:4]=="url:":
     config = json.loads(requests.get(args.config[4:]).text)
 else:
     config = json.load(open(args.config))
+    if "url" in config:
+        config = json.loads(requests.get(config["url"]).text)
 
 history = {"ids": [False]}
 if not args.no_cache:
@@ -36,13 +38,19 @@ if not args.no_cache:
 #https://oauth.vk.com/authorize?client_id=[APP ID]&display=page&scope=wall,groups,offline&response_type=token&v=5.131&state=123456
 
 def updater_maker(filename, fileurl, executable):
-    string = f"from subprocess import Popen\nimport requests\nf = open('{filename}', 'w', encoding='utf-8')\nf.write(requests.get('{fileurl}').text)\nf.close()\n"
-    if executable: string = string + f"Popen('python {filename}', shell=True)\nexit()"
-    f = open("updater.py", "w")
-    f.write(string)
-    f.close()
-    Popen("python updater.py", shell=True)
-    apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "Updated!"})
+    apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: update"})
+    if executable:
+        string = f'from subprocess import Popen\nimport requests\nf = open("{filename}", "w", encoding="utf-8")\nf.write(requests.get(f"{fileurl}").text)\nf.close()i\nPopen("python {filename}", shell=True)\nexit()'
+        f = open("updater.py", "w")
+        f.write(string)
+        f.close()
+        Popen("python updater.py", shell=True)
+        exit(0)
+    else:
+        f = open(filename, "w", encoding="utf-8")
+        f.write(requests.get(fileurl).text)
+        f.close()
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 
 def apiRequest(service, method, payload):
@@ -66,13 +74,14 @@ def replier(config):
             if update_id<message['update_id']:
                 update_id=message['update_id']
                 if "message" in message.keys():
+                    if message['message']['from']['id']!=config['telegram']['user_id']: continue
                     if "text" in message["message"].keys():
                         text = message["message"]["text"]
                     else:
                         text = "/update"
-                    payload = {"chat_id": config['telegram']['user_id'], "text": "Invalid command!"}
+                    payload = {"chat_id": config['telegram']['user_id'], "text": "warning: invalid command"}
                     if text=="/help":
-                        payload["text"] = "/online - check if bot is online\n/update - config files update\n/uptime - get script uptime"
+                        payload["text"] = f"{title}\ngithub.com/mrtnvgr/relay\n\n/online - check if bot is online\n/update - config files update\n/uptime - get script uptime"
                     elif text=="/online":
                         payload["text"] = "yes"
                     elif text=="/uptime":
@@ -81,10 +90,10 @@ def replier(config):
                         if "document" in message["message"]:
                             filepath = apiRequest("telegram", "getFile", {"file_id": message["message"]["document"]["file_id"]})["result"]["file_path"]
                             filename = message["message"]["document"]["file_name"]
-                            updater_maker(filename, "https://api.telegram.org/file/bot{config['telegram']['token']}/{filepath}", False)
-                            if args.config[:4]!="url:" and filename[-4:]=="json": config = json.load(open(filename))
+                            updater_maker(filename, f"https://api.telegram.org/file/bot{config['telegram']['token']}/{filepath}", False)
                     if text!="/update": apiRequest("telegram", "sendMessage", payload)
                 elif "callback_query" in message.keys():
+                    if message['callback_query']['from']['id']!=config['telegram']['user_id']: continue
                     for entity in message["callback_query"]["message"]["caption_entities"]:
                         if entity["type"]=="text_link" and "wall" in entity["url"]:
                             postUrl = entity["url"].split("_")
@@ -104,9 +113,9 @@ def replier(config):
                 elif "inline_query" in message.keys():
                     if message["inline_query"]["query"]!="":
                         payload = {"domain": "doujinmusic",
+                                   "count": "100",
                                    "offset": "1",
-                                   "query": message["inline_query"]["query"],
-                                   "owners_only": "1"}
+                                   "query": message["inline_query"]["query"]}
                         user_id = message["inline_query"]["from"]["id"]
                         if (config["inlineOwnerOnly"] and user_id==config["telegram"]["user_id"]) or (config["inlineOwnerOnly"]!=True):
                             search_posts = apiRequest("vk", "wall.search", payload)
@@ -179,7 +188,7 @@ def postCheck(newPosts, inline=False, inline_id=0):
             updateScr()
     else:
         if inline:
-            apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": '[{"type": "article", "id": "0", "title": "Not found", "message_text": "(－‸ლ)"}]'})
+            apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": '[{"type": "article", "id": "0", "title": "404 Not found", "message_text": "(－‸ლ)"}]'})
 
 def main():
     global postCount
@@ -199,7 +208,7 @@ def main():
                "sort": "desc"}
     posts = apiRequest("vk", "wall.get", payload)
     if 'error' in posts.keys():
-        print("VK api error!")
+        print("error: vk api failure")
         print(posts)
         exit(1)
     else:
@@ -224,9 +233,9 @@ replierThread.daemon = True
 
 if __name__=="__main__":
     while True:
-        apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "restarting..."})
+        apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: restart"})
         try:
             if not replierThread.is_alive(): replierThread.start()
             main()
         except Exception as e:
-            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": f"Exception: {e}"})
+            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": f"error: {e}"})
