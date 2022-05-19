@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.1"
+version = "0.1.2"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -83,9 +83,9 @@ def replier(config):
                     if text=="/help":
                         payload["text"] = f"{title}\ngithub.com/mrtnvgr/relay\n\n/online - check if bot is online\n/update - config files update\n/uptime - get script uptime"
                     elif text=="/online":
-                        payload["text"] = "yes"
+                        payload["text"] = f"online:\n    Main thread: {mainThread.is_alive()}\n    Reply thread: {replierThread.is_alive()}"
                     elif text=="/uptime":
-                        payload["text"] = time.strftime("%M minutes %S seconds", time.localtime(time.monotonic()-startTime))
+                        payload["text"] = time.strftime("uptime: %M minutes %S seconds", time.localtime(time.monotonic()-startTime))
                     elif text=="/update":
                         if "document" in message["message"]:
                             filepath = apiRequest("telegram", "getFile", {"file_id": message["message"]["document"]["file_id"]})["result"]["file_path"]
@@ -231,11 +231,18 @@ def main():
 replierThread = threading.Thread(target=replier, args=(config,))
 replierThread.daemon = True
 
+mainThread = threading.Thread(target=main)
+mainThread.daemon = True
+
 if __name__=="__main__":
-    while True:
+    try:
         apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: restart"})
+    except:
+        time.sleep(10)
+    while True:
         try:
             if not replierThread.is_alive(): replierThread.start()
-            main()
+            if not mainThread.is_alive(): mainThread.start()
+            time.sleep(10)
         except Exception as e:
             apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": f"error: {e}"})
