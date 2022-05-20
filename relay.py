@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.2"
+version = "0.1.2-1"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -94,7 +94,11 @@ def replier(config):
                     if text!="/update": apiRequest("telegram", "sendMessage", payload)
                 elif "callback_query" in message.keys():
                     if message['callback_query']['from']['id']!=config['telegram']['user_id']: continue
-                    for entity in message["callback_query"]["message"]["caption_entities"]:
+                    if "entities" in message["callback_query"]["message"]:
+                        entities = message["callback_query"]["message"]["entities"]
+                    elif "caption_entities" in message["callback_query"]["message"]:
+                        entities = message["callback_query"]["message"]["caption_entities"]
+                    for entity in entities:
                         if entity["type"]=="text_link" and "wall" in entity["url"]:
                             postUrl = entity["url"].split("_")
                             message_id = message["callback_query"]["message"]["message_id"]
@@ -235,14 +239,25 @@ mainThread = threading.Thread(target=main)
 mainThread.daemon = True
 
 if __name__=="__main__":
-    try:
-        apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: restart"})
-    except:
-        time.sleep(10)
     while True:
         try:
-            if not replierThread.is_alive(): replierThread.start()
-            if not mainThread.is_alive(): mainThread.start()
+            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: start"})
+            break
+        except:
+            time.sleep(10)
+    while True:
+        try:
+            if not replierThread.is_alive():
+                replierThread = None
+                replierThread = threading.Thread(target=replier, args=(config,))
+                replierThread.daemon = True
+                replierThread.start()
+            if not mainThread.is_alive():
+                mainThread = None
+                mainThread = threading.Thread(target=main)
+                mainThread.daemon = True
+                mainThread.start()
             time.sleep(10)
         except Exception as e:
             apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": f"error: {e}"})
+            
