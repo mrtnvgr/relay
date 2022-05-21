@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.2-1"
+version = "0.1.2-2"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -81,11 +81,13 @@ def replier(config):
                         text = "/update"
                     payload = {"chat_id": config['telegram']['user_id'], "text": "warning: invalid command"}
                     if text=="/help":
-                        payload["text"] = f"{title}\ngithub.com/mrtnvgr/relay\n\n/online - check if bot is online\n/update - config files update\n/uptime - get script uptime"
+                        payload["text"] = f"{title}\ngithub.com/mrtnvgr/relay\n\n/online - check if bot is online\n/update - config files update\n/uptime - get script uptime\n/restart - restart script"
                     elif text=="/online":
                         payload["text"] = f"online:\n    Main thread: {mainThread.is_alive()}\n    Reply thread: {replierThread.is_alive()}"
                     elif text=="/uptime":
                         payload["text"] = time.strftime("uptime: %M minutes %S seconds", time.localtime(time.monotonic()-startTime))
+                    elif text=="/restart":
+                        os.execl(sys.executable, sys.executable, *sys.argv)
                     elif text=="/update":
                         if "document" in message["message"]:
                             filepath = apiRequest("telegram", "getFile", {"file_id": message["message"]["document"]["file_id"]})["result"]["file_path"]
@@ -159,7 +161,7 @@ def postCheck(newPosts, inline=False, inline_id=0):
                         break
                     elif attachment["type"]=="link":
                         if attachment["link"]["description"]=="Плейлист":
-                            postPlaylist = attachment["link"]["url"]
+                            postPlaylist = attachment["link"]["url"].split("&api_view")[0]
                 if file[1]!=False:
                     payload = {"chat_id": config['telegram']['user_id'],
                                 "photo": postPhoto,
