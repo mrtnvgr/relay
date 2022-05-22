@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.2-2"
+version = "0.1.2-3"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -17,6 +17,8 @@ def updateScr():
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--config", default="config.json")
 parser.add_argument("-nc", "--no-cache", action="store_true")
+parser.add_argument("-q", "--quiet", action="store_true")
+parser.add_argument("-v", "--verbose", action="store_true")
 args = parser.parse_args()
 
 REPLYMARKUP = '{"inline_keyboard": [[{"text": "!LIKESIGN!", "callback_data": "\/like"}]]}'
@@ -191,7 +193,7 @@ def postCheck(newPosts, inline=False, inline_id=0):
         if inline:
             inlineRequestsCount += 1
             apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": f'[{",".join(results)}]'})
-            updateScr()
+            if not args.quiet: updateScr()
     else:
         if inline:
             apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": '[{"type": "article", "id": "0", "title": "404 Not found", "message_text": "(－‸ლ)"}]'})
@@ -206,7 +208,7 @@ def main():
         if version!=remote_version["name"]:
             updater_maker("relay.py", "https://raw.githubusercontent.com/mrtnvgr/relay/main/relay.py", True)
             exit(0)
-    updateScr()
+    if not args.quiet: updateScr()
     newPosts = []
     payload = {"domain": "doujinmusic",
                "offset": "1",
@@ -214,8 +216,9 @@ def main():
                "sort": "desc"}
     posts = apiRequest("vk", "wall.get", payload)
     if 'error' in posts.keys():
-        print("error: vk api failure")
-        print(posts)
+        if not args.quiet:
+            print("error: vk api failure")
+            print(posts)
         exit(1)
     else:
         posts = posts["response"]["items"]
@@ -230,7 +233,7 @@ def main():
             if (whitelist and not blacklist and config["postType"]["albums"]) or ("#статьи@doujinmusic" in i["text"] and config["postType"]["articles"]) or "@doujinmusic" not in i["text"]:
                 newPosts.append(i)
     postCheck(newPosts)
-    updateScr()
+    if not args.quiet: updateScr()
     time.sleep(config["interval"])
 
 
@@ -243,7 +246,7 @@ mainThread.daemon = True
 if __name__=="__main__":
     while True:
         try:
-            apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: start"})
+            if args.verbose: apiRequest("telegram", "sendMessage", {"chat_id": config['telegram']['user_id'], "text": "info: start"})
             break
         except:
             time.sleep(10)
