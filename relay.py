@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.2-3"
+version = "0.1.3"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -56,10 +56,16 @@ def updater_maker(filename, fileurl, executable):
 
 
 def apiRequest(service, method, payload):
-    if service=="telegram":
-        return requests.Session().get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
-    elif service=="vk":
-        return requests.Session().get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
+    while True:
+        try:
+            if service=="telegram":
+                result = requests.Session().get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
+            elif service=="vk":
+                result = requests.Session().get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
+            break
+        except:
+            time.sleep(10)
+    return result
 
 def get_updates(config):
     result = apiRequest("telegram", "getUpdates", {})
