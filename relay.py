@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.2-3"
+version = "0.1.3"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -56,10 +56,16 @@ def updater_maker(filename, fileurl, executable):
 
 
 def apiRequest(service, method, payload):
-    if service=="telegram":
-        return requests.Session().get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
-    elif service=="vk":
-        return requests.Session().get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
+    while True:
+        try:
+            if service=="telegram":
+                result = requests.Session().get(f"https://api.telegram.org/bot{config['telegram']['token']}/{method}", params=payload).json()
+            elif service=="vk":
+                result = requests.Session().get(f"https://api.vk.com/method/{method}", params=payload | {"access_token": config['vk']['token'], "v": "5.131"}).json()
+            break
+        except:
+            time.sleep(10)
+    return result
 
 def get_updates(config):
     result = apiRequest("telegram", "getUpdates", {})
@@ -135,11 +141,6 @@ def postCheck(newPosts, inline=False, inline_id=0):
     results = []
     if len(newPosts)>0:
         for post in newPosts:
-            if inline==False:
-                history["ids"].append(post['id'])
-                if history["ids"][0]==False: history["ids"].pop(0)
-                if len(history["ids"])>config["maxHistory"]: history["ids"] = history["ids"][-config["maxHistory"]:]
-                if not args.no_cache: json.dump(history, open("cache.json", "w"))
             file = [False, False]
             postPlaylist = ""
             if post["likes"]["user_likes"]==0:
@@ -190,6 +191,11 @@ def postCheck(newPosts, inline=False, inline_id=0):
                                 "parse_mode": "HTML"}
                     apiRequest("telegram", "sendMessage", payload)
                     postCount += 1
+            if inline==False:
+                history["ids"].append(post['id'])
+                if history["ids"][0]==False: history["ids"].pop(0)
+                if len(history["ids"])>config["maxHistory"]: history["ids"] = history["ids"][-config["maxHistory"]:]
+                if not args.no_cache: json.dump(history, open("cache.json", "w"))
         if inline:
             inlineRequestsCount += 1
             apiRequest("telegram", "answerInlineQuery", {"inline_query_id": inline_id, "results": f'[{",".join(results)}]'})
