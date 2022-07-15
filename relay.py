@@ -3,7 +3,7 @@ import requests, argparse, threading, time, json, os, sys
 from subprocess import Popen
 from random import randint
 
-version = "0.1.3"
+version = "0.1.4"
 title = f"Relay v{version}"
 
 def updateScr():
@@ -19,6 +19,7 @@ parser.add_argument("-c", "--config", default="config.json")
 parser.add_argument("-nc", "--no-cache", action="store_true")
 parser.add_argument("-q", "--quiet", action="store_true")
 parser.add_argument("-v", "--verbose", action="store_true")
+parser.add_argument("-nr", "--noreply", action="store_true")
 args = parser.parse_args()
 
 REPLYMARKUP = '{"inline_keyboard": [[{"text": "!LIKESIGN!", "callback_data": "\/like"}]]}'
@@ -209,7 +210,12 @@ def main():
     global inlineRequestsCount
     postCount = 0
     inlineRequestsCount = 0
-    remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
+    while True:
+        try:
+            remote_version = requests.get("https://api.github.com/repos/mrtnvgr/relay/releases/latest").json()
+            break
+        except:
+            time.sleep(10)
     if "name" in remote_version.keys():
         if version!=remote_version["name"]:
             updater_maker("relay.py", "https://raw.githubusercontent.com/mrtnvgr/relay/main/relay.py", True)
@@ -258,11 +264,12 @@ if __name__=="__main__":
             time.sleep(10)
     while True:
         try:
-            if not replierThread.is_alive():
-                replierThread = None
-                replierThread = threading.Thread(target=replier, args=(config,))
-                replierThread.daemon = True
-                replierThread.start()
+            if not args.noreply:
+                if not replierThread.is_alive():
+                    replierThread = None
+                    replierThread = threading.Thread(target=replier, args=(config,))
+                    replierThread.daemon = True
+                    replierThread.start()
             if not mainThread.is_alive():
                 mainThread = None
                 mainThread = threading.Thread(target=main)
